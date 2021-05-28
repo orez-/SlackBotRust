@@ -1,0 +1,54 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  SlackToken:
+    Type: String
+    Description: |
+      Slack token for the app this code will act as.
+
+Resources:
+  SlackBotRestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      DefinitionBody:
+        swagger: 2.0
+        info:
+          title:
+            Ref: AWS::StackName
+        paths:
+          "/":
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                # Hardcode SlackBotApplication.Arn to resolve circular dependency
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:SlackBotApplication${AWS::StackName}/invocations"
+              responses: {}
+
+  SlackBotApplication:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "SlackBotApplication${AWS::StackName}"
+      Handler: doesnt.matter
+      Runtime: provided
+      CodeUri: target/bootstrap
+      Timeout: 10
+      Environment:
+        Variables:
+          SLACK_TOKEN: !Ref SlackToken
+      Events:
+        SlackBotWebhook:
+          Type: Api
+          Properties:
+            Path: /
+            Method: POST
+            RestApiId:
+              Ref: SlackBotRestApi
+
+Outputs:
+  WebhookUrl:
+    Description: URL of the application webhook
+    Value: !Sub "https://${SlackBotRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
