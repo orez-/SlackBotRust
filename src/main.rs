@@ -38,8 +38,9 @@ fn deserialize_str<'de, D>(deserializer: D) -> Result<Value, D::Error> where D: 
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ApiGatewayResponse {
-    statusCode: u16,
+    status_code: u16,
     headers: HashMap<String, String>,
     body: String,
 }
@@ -49,13 +50,12 @@ impl ApiGatewayResponse {
         let body = body.to_string();
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        ApiGatewayResponse { statusCode: 200, headers, body }
+        ApiGatewayResponse { status_code: 200, headers, body }
     }
 }
 
 #[derive(Deserialize)]
 struct ChallengeEvent {
-    token: String,
     challenge: String,
 }
 
@@ -105,7 +105,7 @@ async fn handle_event_callback(event: Value) -> Result<(), LambdaError> {
     let event: CallbackEvent = serde_json::from_value(event)?;
     log::info!("Event callback event {:?}", event);
     match event.event {
-        EventType::Message(mevent) if mevent.text.contains("insult me") => {
+        EventType::Message(mevent) if insult::is_insult_request(&mevent) => {
             insult::insult(&mevent).await;
         },
         _ => (),
