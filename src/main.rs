@@ -1,19 +1,22 @@
+use hyper::{Body, Client, Request, Method};
+use hyper_openssl::{HttpsConnector, HttpsLayer};
+use lambda_runtime::{handler_fn, Context, Error as LambdaError};
+use log::LevelFilter;
+use openssl::ssl::{SslConnector, SslMethod};
+use serde::de::Error as _;
+use serde::{Serialize, Deserialize, Deserializer};
+use serde_json::{json, Value};
+use simple_logger::SimpleLogger;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use simple_logger::SimpleLogger;
-use log::LevelFilter;
-use lambda_runtime::{handler_fn, Context, Error as LambdaError};
-use serde_json::{json, Value};
-use serde::de::Error as _;
-use serde::{Serialize, Deserialize, Deserializer};
-use hyper::{Body, Client, Request, Method};
 
 mod insult;
 
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
     SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
+    openssl_probe::init_ssl_cert_env_vars();
 
     let func = handler_fn(api_gateway_func);
     lambda_runtime::run(func).await?;
@@ -119,7 +122,12 @@ pub async fn send_message(channel: &str, message: &str) {
 
 async fn _send_message(channel: &str, message: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     let token = env::var("SLACK_TOKEN")?;
-    let client = Client::new();
+    let https = HttpsConnector::new()?;
+    let client: Client<_, Body> = Client::builder()
+        // Fix "connection closed before message completed" errors.
+        // https://github.com/wyyerd/stripe-rs/pull/172
+        .pool_max_idle_per_host(0)
+        .build(https);
 
     let request = Request::builder()
         .method(Method::POST)
