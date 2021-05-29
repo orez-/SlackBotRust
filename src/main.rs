@@ -1,8 +1,7 @@
-use hyper::{Body, Client, Request, Method};
-use hyper_openssl::{HttpsConnector, HttpsLayer};
+use hyper::{body, Body, Client, Request, Method};
+use hyper_openssl::HttpsConnector;
 use lambda_runtime::{handler_fn, Context, Error as LambdaError};
 use log::LevelFilter;
-use openssl::ssl::{SslConnector, SslMethod};
 use serde::de::Error as _;
 use serde::{Serialize, Deserialize, Deserializer};
 use serde_json::{json, Value};
@@ -10,6 +9,7 @@ use simple_logger::SimpleLogger;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
+use std::time::Duration;
 
 mod insult;
 
@@ -124,22 +124,28 @@ async fn _send_message(channel: &str, message: &str) -> Result<(), Box<dyn Error
     let token = env::var("SLACK_TOKEN")?;
     let https = HttpsConnector::new()?;
     let client: Client<_, Body> = Client::builder()
-        // Fix "connection closed before message completed" errors.
-        // https://github.com/wyyerd/stripe-rs/pull/172
-        .pool_max_idle_per_host(0)
+        .pool_idle_timeout(Duration::from_secs(58))
         .build(https);
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("https://slack.com/api/chat.postMessage/")
+        .uri("https://slack.com/api/chat.postMessage")
         .header("content-type", "application/json; charset=utf-8")
+        .header("accept", "*/*")
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::from(json!({
             "text": message,
             "channel": channel,
         }).to_string()))?;
 
-    client.request(request).await?;
+    let response = client.request(request).await?;
+    let bytes = body::to_bytes(response.into_body()).await?;
+    let body: Value = serde_json::from_slice(&bytes)?;
+    match body.get("ok") {
+        Some(Value::Bool(true)) => (),
+        Some(Value::Bool(false)) => { log::error!("Slack error: {}", body); },
+        _ => { log::error!("Malformed Slack response: {}", body); },
+    }
     Ok(())
 }
 
