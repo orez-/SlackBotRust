@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use regex::Regex;
 use rusoto_core::Region;
-use rusoto_dynamodb::{AttributeValue, DynamoDb, DynamoDbClient, ScanInput, ScanOutput};
+use rusoto_dynamodb::{AttributeValue, DynamoDb, DynamoDbClient, PutItemInput, ScanInput, ScanOutput};
 use tokio::sync::OnceCell;
 
 use crate::{send_message, LambdaResult, MessageEvent};
@@ -30,6 +32,11 @@ impl InsultFactory {
 
         Some(format!("{} {} {}", article, adjective, noun))
     }
+}
+
+enum PartOfSpeech {
+    Noun,
+    Adjective,
 }
 
 fn to_user_tag(user_id: &str) -> String {
@@ -66,16 +73,47 @@ async fn fetch_insults() -> LambdaResult<InsultFactory> {
     Ok(InsultFactory { nouns, adjectives })
 }
 
+async fn insert_word(word: String) -> LambdaResult<()> {
+    let table_name = std::env::var("INSULT_TABLE")?;
+    let mut item = HashMap::new();
+    item.insert("word".to_string(), AttributeValue { s: Some(word), ..Default::default() });
+
+    let client = DynamoDbClient::new(Region::UsEast1);
+    let input = PutItemInput { item, table_name, ..Default::default() };
+    client.put_item(input).await?;
+    Ok(())
+}
+
 pub async fn handle_message(event: &MessageEvent) -> LambdaResult<()> {
-    if event.text.contains("insult me") {
-        return insult(event).await;
+    let re = Regex::new(r"\binsult\s+(<@U\w+>)$").unwrap();
+    if let Some(caps) = re.captures(&event.text) {
+        let name = caps.get(1).unwrap().as_str().to_string();
+        return handle_say_insult(event, name).await;
+    }
+
+    let re = Regex::new(r"\binsult\s+me$").unwrap();
+    if re.is_match(&event.text) {
+        return handle_say_insult(event, to_user_tag(event.user.as_str())).await;
+    }
+
+    let re = Regex::new(r"^(?:<@U\w+>\s)?\s*add\s+(adjective|noun)\s+([\w ,-]+)$").unwrap();
+    if let Some(caps) = re.captures(&event.text) {
+        let pos = match caps.get(1).unwrap().as_str() {
+            "adjective" => PartOfSpeech::Adjective,
+            "noun" => PartOfSpeech::Noun,
+            _ => unreachable!(),
+        };
+        let insult = caps.get(2).unwrap().as_str().trim().to_string();
+        if insult == "" {
+            return send_message(&event.channel, "Nice try wise guy.").await;
+        }
+        return handle_add_word(&event, pos, insult).await;
     }
     Ok(())
 }
 
-async fn insult(event: &MessageEvent) -> LambdaResult<()> {
+async fn handle_say_insult(event: &MessageEvent, user_tag: String) -> LambdaResult<()> {
     let insults = insult_factory().await?;
-    let user_tag = to_user_tag(event.user.as_str());
     let message = match insults.get_insult() {
         Some(insult) => format!("{} is {}", user_tag, insult),
         None => "Shut up.".to_string(),
@@ -84,7 +122,12 @@ async fn insult(event: &MessageEvent) -> LambdaResult<()> {
     send_message(&event.channel, &message).await
 }
 
-async fn add_word(event: &MessageEvent) -> LambdaResult<()> {
-    // @bot add (adjective|noun) ([\w ,-]+)$
+async fn handle_add_word(event: &MessageEvent, pos: PartOfSpeech, mut insult: String) -> LambdaResult<()> {
+    let c = match pos {
+        PartOfSpeech::Noun => 'n',
+        PartOfSpeech::Adjective => 'a',
+    };
+    insult.push(c);
+    insert_word(insult).await?;
     send_message(&event.channel, "Added.").await
 }
