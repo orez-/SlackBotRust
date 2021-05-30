@@ -109,10 +109,12 @@ async fn handle_event_callback(event: Value) -> LambdaResult<()> {
     Ok(())
 }
 
-pub async fn send_message(channel: &str, message: &str) {
-    if let Err(e) = _send_message(channel, message).await {
+pub async fn send_message(channel: &str, message: &str) -> LambdaResult<()> {
+    let result = _send_message(channel, message).await;
+    if let Err(e) = &result {
         log::error!("Error sending message: {}", e);
     }
+    result
 }
 
 async fn _send_message(channel: &str, message: &str) -> LambdaResult<()> {

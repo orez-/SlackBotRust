@@ -81,11 +81,10 @@ async fn insult(event: &MessageEvent) -> LambdaResult<()> {
         None => "Shut up.".to_string(),
     };
 
-    send_message(&event.channel, &message).await;
-    Ok(())
+    send_message(&event.channel, &message).await
 }
 
-async fn add_word(event: &MessageEvent) {
+async fn add_word(event: &MessageEvent) -> LambdaResult<()> {
     // @bot add (adjective|noun) ([\w ,-]+)$
-    send_message(&event.channel, "Added.").await;
+    send_message(&event.channel, "Added.").await
 }
