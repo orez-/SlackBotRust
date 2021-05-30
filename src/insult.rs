@@ -47,16 +47,16 @@ async fn fetch_insults() -> LambdaResult<InsultFactory> {
     let mut adjectives = Vec::new();
     let mut discarded = 0;
     for item in items {
-        let word = match item.get("word") {
+        let mut data = match item.get("word") {
             Some(AttributeValue { s: Some(string), .. }) => string.to_string(),
             _ => {
                 discarded += 1;
                 continue;
             },
         };
-        match item.get("isNoun") {
-            Some(AttributeValue { bool: Some(true), .. }) => { nouns.push(word); },
-            Some(AttributeValue { bool: Some(false), .. }) => { adjectives.push(word); },
+        match data.pop() {
+            Some('n') => { nouns.push(data); }
+            Some('a') => { adjectives.push(data); }
             _ => { discarded += 1; },
         }
     }
