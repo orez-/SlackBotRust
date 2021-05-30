@@ -1,41 +1,93 @@
 use rand::thread_rng;
 use rand::seq::SliceRandom;
+use rusoto_core::Region;
+use rusoto_dynamodb::{DynamoDb, DynamoDbClient, ScanInput, ScanOutput, AttributeValue};
+use tokio::sync::OnceCell;
 
-use crate::{MessageEvent, send_message};
+use crate::{MessageEvent, send_message, AsyncError};
+
+async fn insult_factory() -> Result<&'static InsultFactory, AsyncError> {
+    static INSTANCE: OnceCell<InsultFactory> = OnceCell::const_new();
+    INSTANCE.get_or_try_init(fetch_insults).await
+}
+
+struct InsultFactory {
+    nouns: Vec<String>,
+    adjectives: Vec<String>,
+}
+
+
+impl InsultFactory {
+    fn get_insult(&self) -> Option<String> {
+        let adjective = self.adjectives.choose(&mut thread_rng())?;
+        let noun = self.nouns.choose(&mut thread_rng())?;
+        let article = if let Some(chr) = adjective.chars().next() {
+            match chr {
+                'a' | 'e' | 'i' | 'o' | 'u' |
+                'A' | 'E' | 'I' | 'O' | 'U' => "an",
+                _ => "a",
+            }
+        } else { "a" };
+
+        Some(format!("{} {} {}", article, adjective, noun))
+    }
+}
 
 
 fn to_user_tag(user_id: &str) -> String {
     format!("<@{}>", user_id).to_string()
 }
 
-pub fn is_insult_request(event: &MessageEvent) -> bool {
-    event.text.contains("insult me")
-}
-
-pub async fn insult(event: &MessageEvent) {
-    let mut adjectives = Vec::new();
-    adjectives.push("awful".to_string());
-    adjectives.push("poopy".to_string());
-    adjectives.push("bad".to_string());
+async fn fetch_insults() -> Result<InsultFactory, AsyncError> {
+    let table_name = std::env::var("INSULT_TABLE")?;
+    let client = DynamoDbClient::new(Region::UsEast1);
+    let input = ScanInput { table_name, ..Default::default() };
+    let ScanOutput { items, .. } = client.scan(input).await?;
+    let items = items.unwrap();  // when would this happen??
 
     let mut nouns = Vec::new();
-    nouns.push("butthole".to_string());
-    nouns.push("jerk".to_string());
-
-    let adjective = adjectives.choose(&mut thread_rng()).unwrap();
-    let noun = nouns.choose(&mut thread_rng()).unwrap();
-    let article = if let Some(chr) = adjective.chars().next() {
-        match chr {
-            'a' | 'e' | 'i' | 'o' | 'u' |
-            'A' | 'E' | 'I' | 'O' | 'U' => "an",
-            _ => "a",
+    let mut adjectives = Vec::new();
+    let mut discarded = 0;
+    for item in items {
+        let word = match item.get("word") {
+            Some(AttributeValue { s: Some(string), .. }) => string.to_string(),
+            _ => {
+                discarded += 1;
+                continue;
+            },
+        };
+        match item.get("isNoun") {
+            Some(AttributeValue { bool: Some(true), .. }) => { nouns.push(word); },
+            Some(AttributeValue { bool: Some(false), .. }) => { adjectives.push(word); },
+            _ => { discarded += 1; },
         }
-    } else { "a" };
+    }
+    if discarded > 0 {
+        log::warn!("Discarding dynamodb insult words: {} words were malformed", discarded);
+    }
+    Ok(InsultFactory { nouns, adjectives })
+}
 
+pub async fn handle_message(event: &MessageEvent) -> Result<(), AsyncError> {
+    if event.text.contains("insult me") {
+        return insult(event).await;
+    }
+    Ok(())
+}
+
+async fn insult(event: &MessageEvent) -> Result<(), AsyncError> {
+    let insults = insult_factory().await?;
     let user_tag = to_user_tag(event.user.as_str());
+    let message = match insults.get_insult() {
+        Some(insult) => format!("{} is {}", user_tag, insult),
+        None => "Shut up.".to_string(),
+    };
 
-    send_message(
-        &event.channel,
-        &format!("{} is {} {} {}", user_tag, article, adjective, noun)
-    ).await;
+    send_message(&event.channel, &message).await;
+    Ok(())
+}
+
+async fn add_word(event: &MessageEvent) {
+    // @bot add (adjective|noun) ([\w ,-]+)$
+    send_message(&event.channel, "Added.").await;
 }

@@ -13,6 +13,8 @@ use std::time::Duration;
 
 mod insult;
 
+type AsyncError = Box<dyn Error + Send + Sync>;
+
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
     SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
@@ -104,11 +106,8 @@ fn respond_to_challenge(event: Value) -> Result<Value, LambdaError> {
 async fn handle_event_callback(event: Value) -> Result<(), LambdaError> {
     let event: CallbackEvent = serde_json::from_value(event)?;
     log::info!("Event callback event {:?}", event);
-    match event.event {
-        EventType::Message(mevent) if insult::is_insult_request(&mevent) => {
-            insult::insult(&mevent).await;
-        },
-        _ => (),
+    if let EventType::Message(mevent) = &event.event {
+        insult::handle_message(mevent).await?;
     }
     Ok(())
 }
@@ -120,7 +119,7 @@ pub async fn send_message(channel: &str, message: &str) {
     };
 }
 
-async fn _send_message(channel: &str, message: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn _send_message(channel: &str, message: &str) -> Result<(), AsyncError> {
     let token = env::var("SLACK_TOKEN")?;
     let https = HttpsConnector::new()?;
     let client: Client<_, Body> = Client::builder()
