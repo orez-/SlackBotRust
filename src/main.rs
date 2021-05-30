@@ -1,9 +1,9 @@
-use hyper::{body, Body, Client, Request, Method};
+use hyper::{body, Body, Client, Method, Request};
 use hyper_openssl::HttpsConnector;
 use lambda_runtime::{handler_fn, Context, Error as LambdaError};
 use log::LevelFilter;
 use serde::de::Error as _;
-use serde::{Serialize, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use simple_logger::SimpleLogger;
 use std::collections::HashMap;
@@ -61,7 +61,6 @@ struct ChallengeEvent {
     challenge: String,
 }
 
-
 #[derive(Deserialize, Debug)]
 pub struct MessageEvent {
     subtype: Option<String>,
@@ -113,10 +112,9 @@ async fn handle_event_callback(event: Value) -> Result<(), LambdaError> {
 }
 
 pub async fn send_message(channel: &str, message: &str) {
-    match _send_message(channel, message).await {
-        Err(e) => { log::error!("Error sending message: {}", e); }
-        _ => (),
-    };
+    if let Err(e) = _send_message(channel, message).await {
+        log::error!("Error sending message: {}", e);
+    }
 }
 
 async fn _send_message(channel: &str, message: &str) -> Result<(), AsyncError> {
@@ -149,7 +147,7 @@ async fn _send_message(channel: &str, message: &str) -> Result<(), AsyncError> {
 }
 
 async fn route_request(event: ApiGatewayEvent) -> Result<Value, LambdaError> {
-    let ApiGatewayEvent {body, ..} = event;
+    let ApiGatewayEvent { body, .. } = event;
     let type_ = match body.get("type") {
         Some(Value::String(t)) => t,
         Some(_) => return Ok(json!({"error": "expected string for field 'type'"})),

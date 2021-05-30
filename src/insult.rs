@@ -1,10 +1,10 @@
-use rand::thread_rng;
 use rand::seq::SliceRandom;
+use rand::thread_rng;
 use rusoto_core::Region;
-use rusoto_dynamodb::{DynamoDb, DynamoDbClient, ScanInput, ScanOutput, AttributeValue};
+use rusoto_dynamodb::{AttributeValue, DynamoDb, DynamoDbClient, ScanInput, ScanOutput};
 use tokio::sync::OnceCell;
 
-use crate::{MessageEvent, send_message, AsyncError};
+use crate::{send_message, AsyncError, MessageEvent};
 
 async fn insult_factory() -> Result<&'static InsultFactory, AsyncError> {
     static INSTANCE: OnceCell<InsultFactory> = OnceCell::const_new();
@@ -15,7 +15,6 @@ struct InsultFactory {
     nouns: Vec<String>,
     adjectives: Vec<String>,
 }
-
 
 impl InsultFactory {
     fn get_insult(&self) -> Option<String> {
@@ -33,9 +32,8 @@ impl InsultFactory {
     }
 }
 
-
 fn to_user_tag(user_id: &str) -> String {
-    format!("<@{}>", user_id).to_string()
+    format!("<@{}>", user_id)
 }
 
 async fn fetch_insults() -> Result<InsultFactory, AsyncError> {
