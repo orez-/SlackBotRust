@@ -153,7 +153,7 @@ fn insert_word_to_cache(cache: &RwLock<InsultFactory>, pos: &PartOfSpeech, insul
         Ok(i) => i,
         _ => return Err(Box::new(GenericError("somebody poisoned the insult cache!".to_string()))),
     };
-    Ok(insults.insert_word(&pos, insult.clone()))
+    Ok(insults.insert_word(&pos, insult))
 }
 
 async fn handle_add_word(event: &MessageEvent, pos: PartOfSpeech, mut insult: String) -> LambdaResult<()> {
