@@ -36,9 +36,31 @@ Resources:
       Runtime: provided
       CodeUri: target/bootstrap
       Timeout: 10
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service:
+            - "lambda.amazonaws.com"
+          Action:
+          - "sts:AssumeRole"
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - "dynamodb:DeleteItem"
+          - "dynamodb:GetItem"
+          - "dynamodb:PutItem"
+          - "dynamodb:Query"
+          - "dynamodb:Scan"
+          - "dynamodb:UpdateItem"
+          Resource:
+          - !GetAtt SlackBotInsultsTable.Arn
       Environment:
         Variables:
           SLACK_TOKEN: !Ref SlackToken
+          INSULT_TABLE: !Ref SlackBotInsultsTable
       Events:
         SlackBotWebhook:
           Type: Api
@@ -47,6 +69,19 @@ Resources:
             Method: POST
             RestApiId:
               Ref: SlackBotRestApi
+
+  SlackBotInsultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: word
+        AttributeType: S
+      KeySchema:
+      - AttributeName: word
+        KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
 
 Outputs:
   WebhookUrl:
