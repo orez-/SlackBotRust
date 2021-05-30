@@ -8,15 +8,13 @@ use serde_json::{json, Value};
 use simple_logger::SimpleLogger;
 use std::collections::HashMap;
 use std::env;
-use std::error::Error;
 use std::time::Duration;
 
 mod insult;
-
-type AsyncError = Box<dyn Error + Send + Sync>;
+type LambdaResult<T> = Result<T, LambdaError>;
 
 #[tokio::main]
-async fn main() -> Result<(), LambdaError> {
+async fn main() -> LambdaResult<()> {
     SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
     openssl_probe::init_ssl_cert_env_vars();
 
@@ -97,12 +95,12 @@ fn deserialize_event_callback<'de, D>(deserializer: D) -> Result<EventType, D::E
 }
 
 // https://api.slack.com/events/url_verification
-fn respond_to_challenge(event: Value) -> Result<Value, LambdaError> {
+fn respond_to_challenge(event: Value) -> LambdaResult<Value> {
     let event: ChallengeEvent = serde_json::from_value(event)?;
     Ok(json!({ "challenge": event.challenge }))
 }
 
-async fn handle_event_callback(event: Value) -> Result<(), LambdaError> {
+async fn handle_event_callback(event: Value) -> LambdaResult<()> {
     let event: CallbackEvent = serde_json::from_value(event)?;
     log::info!("Event callback event {:?}", event);
     if let EventType::Message(mevent) = &event.event {
@@ -117,7 +115,7 @@ pub async fn send_message(channel: &str, message: &str) {
     }
 }
 
-async fn _send_message(channel: &str, message: &str) -> Result<(), AsyncError> {
+async fn _send_message(channel: &str, message: &str) -> LambdaResult<()> {
     let token = env::var("SLACK_TOKEN")?;
     let https = HttpsConnector::new()?;
     let client: Client<_, Body> = Client::builder()
@@ -146,7 +144,7 @@ async fn _send_message(channel: &str, message: &str) -> Result<(), AsyncError> {
     Ok(())
 }
 
-async fn route_request(event: ApiGatewayEvent) -> Result<Value, LambdaError> {
+async fn route_request(event: ApiGatewayEvent) -> LambdaResult<Value> {
     let ApiGatewayEvent { body, .. } = event;
     let type_ = match body.get("type") {
         Some(Value::String(t)) => t,
@@ -163,7 +161,7 @@ async fn route_request(event: ApiGatewayEvent) -> Result<Value, LambdaError> {
     Ok(json!( { "ok": true } ))
 }
 
-async fn api_gateway_func(event: Value, _: Context) -> Result<Value, LambdaError> {
+async fn api_gateway_func(event: Value, _: Context) -> LambdaResult<Value> {
     let event: ApiGatewayEvent = serde_json::from_value(event)?;
     let body = route_request(event).await?;
     Ok(serde_json::to_value(ApiGatewayResponse::ok(body))?)

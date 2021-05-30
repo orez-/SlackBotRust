@@ -4,9 +4,9 @@ use rusoto_core::Region;
 use rusoto_dynamodb::{AttributeValue, DynamoDb, DynamoDbClient, ScanInput, ScanOutput};
 use tokio::sync::OnceCell;
 
-use crate::{send_message, AsyncError, MessageEvent};
+use crate::{send_message, LambdaResult, MessageEvent};
 
-async fn insult_factory() -> Result<&'static InsultFactory, AsyncError> {
+async fn insult_factory() -> LambdaResult<&'static InsultFactory> {
     static INSTANCE: OnceCell<InsultFactory> = OnceCell::const_new();
     INSTANCE.get_or_try_init(fetch_insults).await
 }
@@ -36,7 +36,7 @@ fn to_user_tag(user_id: &str) -> String {
     format!("<@{}>", user_id)
 }
 
-async fn fetch_insults() -> Result<InsultFactory, AsyncError> {
+async fn fetch_insults() -> LambdaResult<InsultFactory> {
     let table_name = std::env::var("INSULT_TABLE")?;
     let client = DynamoDbClient::new(Region::UsEast1);
     let input = ScanInput { table_name, ..Default::default() };
@@ -66,14 +66,14 @@ async fn fetch_insults() -> Result<InsultFactory, AsyncError> {
     Ok(InsultFactory { nouns, adjectives })
 }
 
-pub async fn handle_message(event: &MessageEvent) -> Result<(), AsyncError> {
+pub async fn handle_message(event: &MessageEvent) -> LambdaResult<()> {
     if event.text.contains("insult me") {
         return insult(event).await;
     }
     Ok(())
 }
 
-async fn insult(event: &MessageEvent) -> Result<(), AsyncError> {
+async fn insult(event: &MessageEvent) -> LambdaResult<()> {
     let insults = insult_factory().await?;
     let user_tag = to_user_tag(event.user.as_str());
     let message = match insults.get_insult() {
