@@ -111,13 +111,13 @@ async fn insert_word_to_dynamo(word: String) -> LambdaResult<()> {
 }
 
 pub async fn handle_message(event: &MessageEvent) -> LambdaResult<()> {
-    let re = Regex::new(r"\binsult\s+(<@U\w+>)$").unwrap();
+    let re = Regex::new(r"\binsult\s+(<@U\w+>)").unwrap();
     if let Some(caps) = re.captures(&event.text) {
         let name = caps.get(1).unwrap().as_str().to_string();
         return handle_say_insult(event, name).await;
     }
 
-    let re = Regex::new(r"\binsult\s+me$").unwrap();
+    let re = Regex::new(r"\binsult\s+me\b").unwrap();
     if re.is_match(&event.text) {
         return handle_say_insult(event, to_user_tag(event.user.as_str())).await;
     }
